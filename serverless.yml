@@ -1,0 +1,93 @@
+service: igp-sismos-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${sls:stage}-sismos
+    IGP_API_URL: https://ide.igp.gob.pe/arcgis/rest/services/monitoreocensis/SismosReportados/MapServer/0/query
+    LOG_LEVEL: INFO
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchWriteItem
+          Resource:
+            - !GetAtt SismosTable.Arn
+            - !Sub '${SismosTable.Arn}/index/*'
+
+package:
+  individually: false
+  patterns:
+    - '!node_modules/**'
+    - '!.venv/**'
+    - '!tests/**'
+    - '!README.md'
+
+functions:
+  scrapeSismos:
+    handler: src/handlers/scrape_sismos.handler
+    description: Scrapea los ultimos sismos del IGP y los guarda en DynamoDB
+    events:
+      # Se ejecuta cada 15 minutos. Ajusta la expresion segun necesites.
+      - schedule:
+          rate: rate(15 minutes)
+          enabled: true
+      # Tambien se puede invocar manualmente via HTTP POST
+      - httpApi:
+          path: /scrape
+          method: post
+
+  getSismos:
+    handler: src/handlers/get_sismos.handler
+    description: Devuelve los sismos almacenados en DynamoDB
+    events:
+      - httpApi:
+          path: /sismos
+          method: get
+
+resources:
+  Resources:
+    SismosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sismo_id
+            AttributeType: S
+          - AttributeName: fecha_hora
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sismo_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: fecha_hora_index
+            KeySchema:
+              - AttributeName: fecha_hora
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: false
+    slim: true
+
+outputs:
+  HttpApiUrl:
+    value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'

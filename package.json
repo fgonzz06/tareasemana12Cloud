@@ -1,0 +1,9 @@
+{
+  "name": "igp-sismos-api",
+  "version": "1.0.0",
+  "description": "API serverless que scrapea los ultimos sismos del IGP y los guarda en DynamoDB",
+  "devDependencies": {
+    "serverless": "^3.38.0",
+    "serverless-python-requirements": "^6.0.1"
+  }
+}
